@@ -1,0 +1,4 @@
+data/
+*.pro.user
+*.o
+*.node
