@@ -8,14 +8,16 @@ class QTextEdit;
 struct Node;
 struct Edge {
   int value;
-  Node *nodeFrom, *nodeTo;
+  Node *nodeStart, *nodeEnd;
 };
 
 struct Node {
   QString word;
-  QHash<QString, Edge*> edgesFrom, edgesTo;
+  QHash<QString, Edge*> edgesOut, edgesIn;
 };
 
+typedef QVector<Node*> NodeVector;
+typedef QVector<Edge*> EdgeVector;
 class MainWindow : public QMainWindow
 {
   Q_OBJECT
@@ -28,6 +30,12 @@ private slots:
   void onEditorTextChanged();
 
 private:
+  QString searchForSentence(QString sentence);
+
+  Node* findNodeWithSimilarWord(const QString& word, NodeVector& vec);
+
+  NodeVector& fixSentence(NodeVector& vector, const QStringList& sentence);
+
   QString findSentenceEnding(const QString& line);
   void parseToGraph(QString& sentence);
 
@@ -35,7 +43,7 @@ private:
 
   void loadTextsToGraph();
 
-  int debugCounter;
+  int debugEdgeCounter;
 
   QTextEdit *_textEditor, *_resultEditor;
   const QVector<QString> _sentenceEndings;
