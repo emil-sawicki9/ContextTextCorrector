@@ -7,6 +7,9 @@
 #include <QDebug>
 #include <QDir>
 #include <QTimer>
+#include <QStack>
+
+#define DEBUG
 
 MainWindow::MainWindow(QWidget *parent)
   : QMainWindow(parent)
@@ -25,9 +28,9 @@ MainWindow::MainWindow(QWidget *parent)
 
   connect(_textEditor, &QTextEdit::textChanged, this, &MainWindow::onEditorTextChanged);
 
-  loadTextsToGraph();
+  loadTextsToGraph("./text.txt");
 
-  qDebug() <<"RESULT" << searchForSentence(QString("The weather wsa qute cool and cloudy and it turned out a shoery afternoon."));
+  qDebug() <<"RESULT" << searchForSentence(QString("The weather was qiute cool and cloudy and it turned out a showery afternoon."));
 
   QTimer::singleShot(0, this, &MainWindow::close);
 }
@@ -40,9 +43,8 @@ MainWindow::~MainWindow()
 QString MainWindow::searchForSentence(QString sentence)
 {
   // checking for ending mark
-  QString ending = findSentenceEnding(sentence);
-  if (!sentence.isEmpty())
-    sentence.remove(ending);
+  const QString ending = findSentenceEndingMark(sentence);
+  sentence.remove(ending);
 
   QStringList words = sentence.split(' ');
   if (!ending.isEmpty())
@@ -50,21 +52,16 @@ QString MainWindow::searchForSentence(QString sentence)
 
   // trimming and removing empty words
   for (int i = 0 ; i < words.count(); i++)
-  {
     words[i] = words.at(i).trimmed();
-  }
 
   NodeVector sentenceNodes;
-
   // getting first node
   Node* node = 0;
-  if (words.count() > 0 && _graph.contains(words.at(0)))
-  {
+  if (words.count() > 0)
     node = _graph[words.at(0)];
-  }
   sentenceNodes.push_back(node);
 
-  // searching for all nodes
+  // searching for all nodes with words from sentence
   bool foundAll = true;
   for (int i = 1 ; i < words.count(); i++)
   {
@@ -78,10 +75,8 @@ QString MainWindow::searchForSentence(QString sentence)
         foundAll = false;
       }
     }
-    else if (_graph.contains(words.at(i)))
-    {
+    else
       node = _graph[words.at(i)];
-    }
     sentenceNodes.push_back(node);
   }
 
@@ -89,24 +84,13 @@ QString MainWindow::searchForSentence(QString sentence)
   if (!ending.isEmpty() && sentenceNodes.last() == 0)
   {
     Node* endingNode = _graph[ending];
-    // adding connection between last word and ending
-//    if (node && endingNode)
-//    {
-//      Edge *conn = new Edge;
-//      conn->value = 1;
-//      conn->nodeStart = node;
-//      conn->nodeEnd = endingNode;
-//      node->edgesOut.insert(ending ,conn);
-//      endingNode->edgesIn.insert(node->word, conn);
-//    }
+    setupConnection(node, endingNode);
     sentenceNodes[sentenceNodes.length() - 1] = endingNode;
   }
 
   if (!foundAll)
-  {
     fixSentence(sentenceNodes, words);
-  }
-
+#ifdef DEBUG
   QString res = QString();
   Q_FOREACH(Node* n, sentenceNodes)
   {
@@ -115,13 +99,16 @@ QString MainWindow::searchForSentence(QString sentence)
     else
       res += "NULL ";
   }
+#endif
 
   return res.trimmed();
 }
 
 NodeVector& MainWindow::fixSentence(NodeVector &vector, const QStringList& sentence)
 {
+#ifdef DEBUG
   qDebug() << "FIXING" << sentence.join(' ');
+#endif
   for (int i = 0 ; i < vector.count(); i++)
   {
     if (vector.at(i) == 0)
@@ -153,44 +140,20 @@ NodeVector& MainWindow::fixSentence(NodeVector &vector, const QStringList& sente
 
         if (nextNode) // if only few words are incorrect
         {
-          qDebug() << perviousNode->word << "---" << (edgeLength-1) << "---" << nextNode->word;
-          // one node is wrong
-          if (edgeLength == 2)
+#ifdef DEBUG
+          qDebug() << "fixing between" << perviousNode->word << "---" << (edgeLength-1) << "---" << nextNode->word;
+#endif
+          QVector<NodeVector> paths = findPathsBetweenTwoNodes(perviousNode, nextNode, edgeLength-1);
+          NodeVector alternativeNodes;
+          Q_FOREACH(NodeVector vec, paths)
           {
-            Edge *bestEdge = 0;
-            NodeVector alternativeNodes;
-            Q_FOREACH(const QString& word, perviousNode->edgesOut.keys())
-            {
-              if (nextNode->edgesIn.contains(word))
-              {
-                alternativeNodes.push_back(nextNode->edgesIn[word]->nodeStart);
-                Edge *e = nextNode->edgesIn[word];
-                Edge *pe = perviousNode->edgesOut[word];
-                if (bestEdge)
-                {
-                  if (e->value > bestEdge->value)
-                    bestEdge = e;
-                  if (pe->value > bestEdge->value)
-                    bestEdge = pe;
-                }
-                else
-                  bestEdge = e->value > pe->value ? e : pe;
-              }
-            }
-
-
-            Node* node = findNodeWithSimilarWord(currentWord, alternativeNodes);
-            if (node)
-              vector[i] = node;
-            else if (bestEdge)
-              vector[i] = bestEdge->nodeStart == perviousNode ? bestEdge->nodeEnd : bestEdge->nodeStart;
+            vec.pop_back();
+            vec.pop_front();
+            alternativeNodes.push_back(vec.first());
           }
-          // multiple nodes are wrong
-          else
-          {
-            QVector<NodeVector> paths;
-            i += edgeLength-1;
-          }
+
+          vector[i] = findNodeWithSimilarWord(currentWord, alternativeNodes);
+          i += edgeLength-1;
         }
         else // if all words are incorrect
         {
@@ -201,6 +164,53 @@ NodeVector& MainWindow::fixSentence(NodeVector &vector, const QStringList& sente
     }
   }
   return vector;
+}
+
+QVector<NodeVector> MainWindow::findPathsBetweenTwoNodes(Node *start, Node *end, const int nodeCountBetween)
+{
+  QVector<NodeVector> paths;
+  QStack<Node*> stack;
+  stack.push(start);
+#ifdef DEBUG
+  qDebug() << "SEARCHING PATH" << start->word << nodeCountBetween << end->word;
+#endif
+
+  searchGraphDFS(end, nodeCountBetween+2, stack, paths);
+
+  return paths;
+}
+
+void MainWindow::searchGraphDFS(Node *end, const int maxDepth, QStack<Node*>& stack, QVector<NodeVector>& paths)
+{
+  while(!stack.isEmpty())
+  {
+    Node* current = stack.top();
+    if (stack.length() == maxDepth)
+    {
+      if (current == end) // founding correct path
+      {
+#ifdef DEBUG
+//        QString t;
+//        Q_FOREACH(Node* n, stack)
+//          t += n->word + " ";
+//        qDebug() << "appending" << t;
+#endif
+        paths.append(stack.toList().toVector());
+      }
+      stack.pop();
+      return;
+    }
+    else // search deeper
+    {
+      Q_FOREACH(Edge *e, current->edgesOut)
+      {
+        stack.push(e->nodeEnd);
+        searchGraphDFS(end, maxDepth, stack, paths);
+      }
+      stack.pop();
+      return;
+    }
+  }
 }
 
 Node* MainWindow::findNodeWithSimilarWord(const QString &word, NodeVector &vec)
@@ -250,7 +260,10 @@ Node* MainWindow::findNodeWithSimilarWord(const QString &word, NodeVector &vec)
 
   }
 
-  return 0;
+  if (vec.length() > 0)
+    return vec.at(0);
+  else
+    return 0;
 }
 
 void MainWindow::onEditorTextChanged()
@@ -258,7 +271,7 @@ void MainWindow::onEditorTextChanged()
   qDebug() << _textEditor->toPlainText();
 }
 
-QString MainWindow::findSentenceEnding(const QString &line)
+QString MainWindow::findSentenceEndingMark(const QString &line)
 {
   Q_FOREACH(const QString& end, _sentenceEndings)
   {
@@ -270,19 +283,22 @@ QString MainWindow::findSentenceEnding(const QString &line)
 
 void MainWindow::parseToGraph(QString &sentence)
 {
-  sentence.remove("(");
-  sentence.remove(")");
+  // removing parentheses and Capitalizing first letter
+  sentence.remove("(").remove(")");
   sentence = sentence.left(1).toUpper()+sentence.mid(1);
+  // checking if sentence start from letter or is long enough
   if (!sentence.at(0).isLetter() || sentence.split(" ").count() < 3)
     return;
 
-  const QString endMark = findSentenceEnding(sentence);
+  // finding ending of sentence
+  const QString endMark = findSentenceEndingMark(sentence);
   sentence = sentence.remove("!").remove("?").remove(".");
   QStringList words = sentence.split(' ');
 
   if (words.isEmpty()|| endMark.isEmpty())
     return;
 
+  // appending ending mark to list of words
   if (QString(words.last()).trimmed() != endMark)
     words.append(endMark);
 
@@ -312,22 +328,11 @@ void MainWindow::parseToGraph(QString &sentence)
   }
 }
 
-Node* MainWindow::setupConnection(Node *nodeLeft, const QString& nodeRightWord)
+Node* MainWindow::setupConnection(Node *nodeLeft, Node *nodeRight)
 {
-  Node* nodeRight = 0;
-  if (_graph.contains(nodeRightWord))
-  {
-    nodeRight = _graph[nodeRightWord];
-  }
-  else
-  {
-    nodeRight = new Node;
-    nodeRight->word = nodeRightWord;
-    _graph.insert(nodeRightWord, nodeRight);
-  }
-
   if (nodeLeft && nodeRight)
   {
+    // finding or creating edge
     Edge * connection = 0;
     // if node before NOT have connetion to current node
     if (!nodeLeft->edgesOut.contains(nodeRight->word))
@@ -351,26 +356,43 @@ Node* MainWindow::setupConnection(Node *nodeLeft, const QString& nodeRightWord)
       nodeRight->edgesIn.insert(nodeLeft->word, connection);
     }
   }
-
   return nodeRight;
 }
 
-void MainWindow::loadTextsToGraph()
+Node* MainWindow::setupConnection(Node *nodeLeft, const QString& nodeRightWord)
 {
-  QFile file("./text.txt");
+  // finding or creating node to connect to
+  Node* nodeRight = _graph[nodeRightWord];
+
+  if (!nodeRight)
+  {
+    nodeRight = new Node;
+    nodeRight->word = nodeRightWord;
+    _graph.insert(nodeRightWord, nodeRight);
+  }
+
+  return setupConnection(nodeLeft, nodeRight);
+}
+
+void MainWindow::loadTextsToGraph(const QString& fileName)
+{
+  // opening file
+  QFile file(fileName);
   if (file.open(QIODevice::ReadOnly))
   {
     QTextStream in(&file);
     QString sentence = QString();
     while (!in.atEnd())
     {
+      // reading line and removing special signs
       QString line = in.readLine().trimmed();
       if (line.startsWith("#") || line.startsWith("*") || line.contains("http:") || line.contains("-") || line.contains("@"))
         continue;
 
       line.remove("‘").remove("\"").remove("’").replace(";", ".").remove(",");
 
-      QString ending = findSentenceEnding(line);
+      // finding sentence ending mark
+      QString ending = findSentenceEndingMark(line);
       if (!ending.isEmpty())
       {
         QStringList sentences = line.split(ending);
@@ -384,7 +406,7 @@ void MainWindow::loadTextsToGraph()
         if (idxParLeft != -1 && idxParRight != 1)
         {
           QString subsentence = sentence.mid(idxParLeft+1, idxParRight - idxParLeft-1);
-          QString subEnding = findSentenceEnding(subsentence);
+          QString subEnding = findSentenceEndingMark(subsentence);
           if (subEnding.isEmpty())
             subsentence.append(".");
 
@@ -400,10 +422,13 @@ void MainWindow::loadTextsToGraph()
       }
       else if (line.isEmpty() && !sentence.isEmpty())
       {
+        // if line have no ending and has new line after it
+        // (it's probably some book notes then)
         sentence = QString();
       }
       else
       {
+        // appending new line to sentence
         sentence += line + " ";
       }
     }

@@ -34,14 +34,19 @@ private:
 
   Node* findNodeWithSimilarWord(const QString& word, NodeVector& vec);
 
+  QVector<NodeVector> findPathsBetweenTwoNodes(Node* start, Node* end, const int nodeCountBetween);
+
+  void searchGraphDFS(Node* end, const int maxDepth, QStack<Node*>& stack, QVector<NodeVector>& paths);
+
   NodeVector& fixSentence(NodeVector& vector, const QStringList& sentence);
 
-  QString findSentenceEnding(const QString& line);
+  QString findSentenceEndingMark(const QString& line);
   void parseToGraph(QString& sentence);
 
   Node* setupConnection(Node* nodeLeft, const QString& nodeRightWord);
+  Node* setupConnection(Node* nodeLeft, Node* nodeRight);
 
-  void loadTextsToGraph();
+  void loadTextsToGraph(const QString& fileName);
 
   int debugEdgeCounter;
 
