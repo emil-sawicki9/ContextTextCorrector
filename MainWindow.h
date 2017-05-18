@@ -5,18 +5,23 @@
 
 class QTextEdit;
 
+
+typedef QVector<QString> StringVector;
 struct Node;
+
 struct Edge {
   int value;
   Node *nodeStart, *nodeEnd;
 };
 
 struct Node {
+  StringVector sentenceHash;
   QString word;
   QHash<QString, Edge*> edgesOut, edgesIn;
 };
 
 typedef QVector<Node*> NodeVector;
+typedef QPair<NodeVector, int> NodeVectorWeighted;
 typedef QVector<Edge*> EdgeVector;
 class MainWindow : public QMainWindow
 {
@@ -28,22 +33,24 @@ public:
 
 private slots:
   void onEditorTextChanged();
+  void onCheckSpelling();
 
 private:
   QString searchForSentence(QString sentence);
 
   Node* findNodeWithSimilarWord(const QString& word, NodeVector& vec);
+  bool isSimilarWord(QString left, QString right);
 
-  QVector<NodeVector> findPathsBetweenTwoNodes(Node* start, Node* end, const int nodeCountBetween);
+  QVector<NodeVectorWeighted> findPathsBetweenTwoNodes(Node* start, Node* end, const int nodeCountBetween, const StringVector& words = StringVector());
 
-  void searchGraphDFS(Node* end, const int maxDepth, QStack<Node*>& stack, QVector<NodeVector>& paths);
+  void searchGraphDFS(Node* end, const int maxDepth,const int currentWeight, QStack<Node*>& stack, QVector<NodeVectorWeighted>& paths, const StringVector& words);
 
   NodeVector& fixSentence(NodeVector& vector, const QStringList& sentence);
 
   QString findSentenceEndingMark(const QString& line);
   void parseToGraph(QString& sentence);
 
-  Node* setupConnection(Node* nodeLeft, const QString& nodeRightWord);
+  Node* setupConnection(Node* nodeLeft, const QString& nodeRightWord, const QString& sentenceHash);
   Node* setupConnection(Node* nodeLeft, Node* nodeRight);
 
   void loadTextsToGraph(const QString& fileName);
@@ -51,7 +58,7 @@ private:
   int debugEdgeCounter;
 
   QTextEdit *_textEditor, *_resultEditor;
-  const QVector<QString> _sentenceEndings;
+  const StringVector _sentenceEndings;
   QHash<QString, Node*> _graph;
 };
 

@@ -8,12 +8,15 @@
 #include <QDir>
 #include <QTimer>
 #include <QStack>
+#include <QCryptographicHash>
+#include <QElapsedTimer>
+#include <QPushButton>
 
 #define DEBUG
 
 MainWindow::MainWindow(QWidget *parent)
   : QMainWindow(parent)
-  , _sentenceEndings(QVector<QString>() << "." << "!" << "?")
+  , _sentenceEndings(StringVector() << "." << "!" << "?")
 {
   debugEdgeCounter = 0;
   this->setCentralWidget(new QWidget(this));
@@ -22,17 +25,20 @@ MainWindow::MainWindow(QWidget *parent)
   _textEditor = new QTextEdit(this);
   _resultEditor = new QTextEdit(this);
   _resultEditor->setReadOnly(true);
+  QPushButton * spellingBut = new QPushButton("GO", this);
+  connect(spellingBut, &QPushButton::clicked, this, &MainWindow::onCheckSpelling);
 
   lay->addWidget(_textEditor);
+  lay->addWidget(spellingBut);
   lay->addWidget(_resultEditor);
 
   connect(_textEditor, &QTextEdit::textChanged, this, &MainWindow::onEditorTextChanged);
 
   loadTextsToGraph("./text.txt");
 
-  qDebug() <<"RESULT" << searchForSentence(QString("The weather was qiute cool and cloudy and it turned out a showery afternoon."));
+  _textEditor->setPlainText(QString("The weather was quite cool and cloudy and it turned out a showery afternoon."));
 
-  QTimer::singleShot(0, this, &MainWindow::close);
+//  QTimer::singleShot(0, this, &MainWindow::close);
 }
 
 MainWindow::~MainWindow()
@@ -40,8 +46,15 @@ MainWindow::~MainWindow()
 
 }
 
+void MainWindow::onCheckSpelling()
+{
+  _resultEditor->setPlainText(searchForSentence(_textEditor->toPlainText()));
+}
+
 QString MainWindow::searchForSentence(QString sentence)
 {
+  QElapsedTimer timer;
+  timer.start();
   // checking for ending mark
   const QString ending = findSentenceEndingMark(sentence);
   sentence.remove(ending);
@@ -99,8 +112,8 @@ QString MainWindow::searchForSentence(QString sentence)
     else
       res += "NULL ";
   }
+  qDebug() << ">>> FIXED in " << timer.elapsed() << "ms <<<";
 #endif
-
   return res.trimmed();
 }
 
@@ -113,11 +126,11 @@ NodeVector& MainWindow::fixSentence(NodeVector &vector, const QStringList& sente
   {
     if (vector.at(i) == 0)
     {
-      const QString& currentWord = sentence.at(i);
+//      const QString& currentWord = sentence.at(i);
 
       if (i == 0) // fixing first word
       {
-
+        // TODO fixing sentence when there is no FIRST word found
       }
       else // fixing any other word
       {
@@ -143,20 +156,36 @@ NodeVector& MainWindow::fixSentence(NodeVector &vector, const QStringList& sente
 #ifdef DEBUG
           qDebug() << "fixing between" << perviousNode->word << "---" << (edgeLength-1) << "---" << nextNode->word;
 #endif
-          QVector<NodeVector> paths = findPathsBetweenTwoNodes(perviousNode, nextNode, edgeLength-1);
+          StringVector wordsToFix;
+          for(int k = i ; k < i + edgeLength; k++)
+            wordsToFix.push_back(sentence.at(k));
+
+          QVector<NodeVectorWeighted> paths = findPathsBetweenTwoNodes(perviousNode, nextNode, edgeLength-1, wordsToFix);
           NodeVector alternativeNodes;
-          Q_FOREACH(NodeVector vec, paths)
+          int currentEdgeSum = 0;
+          Q_FOREACH(NodeVectorWeighted vec, paths)
           {
-            vec.pop_back();
-            vec.pop_front();
-            alternativeNodes.push_back(vec.first());
+            // TODO test on nodes with most similar hashes
+            if (vec.second >= currentEdgeSum)
+              alternativeNodes = vec.first;
           }
 
-          vector[i] = findNodeWithSimilarWord(currentWord, alternativeNodes);
+          if (alternativeNodes.count() > 0)
+          {
+            alternativeNodes.pop_back();
+            alternativeNodes.pop_front();
+
+            for (int k = 0 ; k < alternativeNodes.size() ; k++)
+            {
+              vector[i + k] = alternativeNodes[k];
+            }
+          }
+
           i += edgeLength-1;
         }
         else // if all words are incorrect
         {
+          // TODO when first word is found but any other
           return vector;
         }
 
@@ -166,21 +195,21 @@ NodeVector& MainWindow::fixSentence(NodeVector &vector, const QStringList& sente
   return vector;
 }
 
-QVector<NodeVector> MainWindow::findPathsBetweenTwoNodes(Node *start, Node *end, const int nodeCountBetween)
+QVector<NodeVectorWeighted> MainWindow::findPathsBetweenTwoNodes(Node *start, Node *end, const int nodeCountBetween, const StringVector& words)
 {
-  QVector<NodeVector> paths;
+  QVector<NodeVectorWeighted> paths;
   QStack<Node*> stack;
   stack.push(start);
 #ifdef DEBUG
-  qDebug() << "SEARCHING PATH" << start->word << nodeCountBetween << end->word;
+  qDebug() << "SEARCHING PATH" << start->word << words << "DEPTH =" << nodeCountBetween;
 #endif
 
-  searchGraphDFS(end, nodeCountBetween+2, stack, paths);
+  searchGraphDFS(end, nodeCountBetween+2, 0, stack, paths, words);
 
   return paths;
 }
 
-void MainWindow::searchGraphDFS(Node *end, const int maxDepth, QStack<Node*>& stack, QVector<NodeVector>& paths)
+void MainWindow::searchGraphDFS(Node *end, const int maxDepth,const int currentWeight, QStack<Node*>& stack, QVector<NodeVectorWeighted>& paths, const StringVector& words)
 {
   while(!stack.isEmpty())
   {
@@ -190,22 +219,35 @@ void MainWindow::searchGraphDFS(Node *end, const int maxDepth, QStack<Node*>& st
       if (current == end) // founding correct path
       {
 #ifdef DEBUG
-//        QString t;
-//        Q_FOREACH(Node* n, stack)
-//          t += n->word + " ";
-//        qDebug() << "appending" << t;
+        QString t;
+        Q_FOREACH(Node* n, stack)
+          t += n->word + " ";
+        qDebug() << "appending" << t << " WEIGHT =" << currentWeight;
 #endif
-        paths.append(stack.toList().toVector());
+        paths.append(qMakePair(stack.toList().toVector(), currentWeight));
       }
       stack.pop();
       return;
     }
     else // search deeper
     {
+      const QString currentWord = words.at(stack.length()-1);
       Q_FOREACH(Edge *e, current->edgesOut)
       {
-        stack.push(e->nodeEnd);
-        searchGraphDFS(end, maxDepth, stack, paths);
+        if (isSimilarWord(currentWord, e->nodeEnd->word))
+        {
+          Q_FOREACH(const QString& hash, e->nodeEnd->sentenceHash)
+          {
+            if (current->sentenceHash.contains(hash))
+            {
+              stack.push(e->nodeEnd);
+              searchGraphDFS(end, maxDepth, currentWeight + e->value, stack, paths, words);
+              break;
+            }
+          }
+          if (currentWord == e->nodeEnd->word)
+            break;
+        }
       }
       stack.pop();
       return;
@@ -218,46 +260,10 @@ Node* MainWindow::findNodeWithSimilarWord(const QString &word, NodeVector &vec)
   QString sortedWord = word;
   std::sort(sortedWord.begin(), sortedWord.end());
 
-  const int start = (int)'a';
-  const int end = (int)'z';
-
   Q_FOREACH(Node* node, vec)
   {
-    QString nodeWord = node->word;
-    std::sort(nodeWord.begin(), nodeWord.end());
-    // when words have same length
-    if (nodeWord.length() == sortedWord.length())
-    {
-      if (nodeWord == sortedWord)
-        return node;
-    }
-    // when word is bigger than node word
-    else if (nodeWord.length() > sortedWord.length())
-    {
-      for (int i = start ; i <= end; i++)
-      {
-        QString tmpWord = sortedWord + (char)i;
-        std::sort(tmpWord.begin(), tmpWord.end());
-        if (tmpWord == nodeWord)
-        {
-          return node;
-        }
-      }
-    }
-    // when word is smaller than node word
-    else
-    {
-      for (int i = start ; i <= end; i++)
-      {
-        QString tmpWord = nodeWord + (char)i;
-        std::sort(tmpWord.begin(), tmpWord.end());
-        if (tmpWord == sortedWord)
-        {
-          return node;
-        }
-      }
-    }
-
+    if (isSimilarWord(sortedWord, node->word))
+      return node;
   }
 
   if (vec.length() > 0)
@@ -266,9 +272,50 @@ Node* MainWindow::findNodeWithSimilarWord(const QString &word, NodeVector &vec)
     return 0;
 }
 
+bool MainWindow::isSimilarWord(QString left, QString right)
+{
+  const int start = (int)'a';
+  const int end = (int)'z';
+  std::sort(left.begin(), left.end());
+  std::sort(right.begin(), right.end());
+  // when words have same length
+  if (left.length() == right.length())
+  {
+    if (left == right)
+      return true;
+  }
+  // when word is bigger than node word
+  else if (left.length() > right.length())
+  {
+    for (int i = start ; i <= end; i++)
+    {
+      QString tmpWord = right + (char)i;
+      std::sort(tmpWord.begin(), tmpWord.end());
+      if (tmpWord == left)
+      {
+        return true;
+      }
+    }
+  }
+  // when word is smaller than node word
+  else
+  {
+    for (int i = start ; i <= end; i++)
+    {
+      QString tmpWord = left + (char)i;
+      std::sort(tmpWord.begin(), tmpWord.end());
+      if (tmpWord == right)
+      {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 void MainWindow::onEditorTextChanged()
 {
-  qDebug() << _textEditor->toPlainText();
+//  qDebug() << _textEditor->toPlainText();
 }
 
 QString MainWindow::findSentenceEndingMark(const QString &line)
@@ -292,6 +339,7 @@ void MainWindow::parseToGraph(QString &sentence)
 
   // finding ending of sentence
   const QString endMark = findSentenceEndingMark(sentence);
+  const QString sentenceHash = QString(QCryptographicHash::hash(sentence.toLatin1(),QCryptographicHash::Md5).toHex());
   sentence = sentence.remove("!").remove("?").remove(".");
   QStringList words = sentence.split(' ');
 
@@ -324,7 +372,7 @@ void MainWindow::parseToGraph(QString &sentence)
 //      perviousNode = setupConnection(perviousNode, comma);
 //    }
 
-    perviousNode = setupConnection(perviousNode, word);
+    perviousNode = setupConnection(perviousNode, word, sentenceHash);
   }
 }
 
@@ -359,7 +407,7 @@ Node* MainWindow::setupConnection(Node *nodeLeft, Node *nodeRight)
   return nodeRight;
 }
 
-Node* MainWindow::setupConnection(Node *nodeLeft, const QString& nodeRightWord)
+Node* MainWindow::setupConnection(Node *nodeLeft, const QString& nodeRightWord, const QString& sentenceHash)
 {
   // finding or creating node to connect to
   Node* nodeRight = _graph[nodeRightWord];
@@ -368,7 +416,12 @@ Node* MainWindow::setupConnection(Node *nodeLeft, const QString& nodeRightWord)
   {
     nodeRight = new Node;
     nodeRight->word = nodeRightWord;
+    nodeRight->sentenceHash.push_back(sentenceHash);
     _graph.insert(nodeRightWord, nodeRight);
+  }
+  else if (!nodeRight->sentenceHash.contains(sentenceHash))
+  {
+    nodeRight->sentenceHash.push_back(sentenceHash);
   }
 
   return setupConnection(nodeLeft, nodeRight);
@@ -376,6 +429,9 @@ Node* MainWindow::setupConnection(Node *nodeLeft, const QString& nodeRightWord)
 
 void MainWindow::loadTextsToGraph(const QString& fileName)
 {
+  qDebug() << "LOADING DATA";
+  QElapsedTimer timer;
+  timer.start();
   // opening file
   QFile file(fileName);
   if (file.open(QIODevice::ReadOnly))
@@ -436,5 +492,5 @@ void MainWindow::loadTextsToGraph(const QString& fileName)
   else
     qDebug() << "CANNOT OPEN FILE" << file.errorString();
 
-  qDebug() << "loaded" << _graph.count() << "words and" << debugEdgeCounter << "edges";
+  qDebug() << "loaded" << _graph.count() << "words and" << debugEdgeCounter << "edges in " << timer.elapsed() << "ms";
 }
