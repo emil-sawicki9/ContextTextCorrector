@@ -15,7 +15,7 @@ struct Edge {
 };
 
 struct Node {
-  StringVector sentenceHash;
+  QVector<int> sentenceIndexes;
   QString word;
   QHash<QString, Edge*> edgesOut, edgesIn;
 };
@@ -50,7 +50,7 @@ private:
   QString findSentenceEndingMark(const QString& line);
   void parseToGraph(QString& sentence);
 
-  Node* setupConnection(Node* nodeLeft, const QString& nodeRightWord, const QString& sentenceHash);
+  Node* setupConnection(Node* nodeLeft, const QString& nodeRightWord, const int sentenceIdx);
   Node* setupConnection(Node* nodeLeft, Node* nodeRight);
 
   void loadTextsToGraph(const QString& fileName);
@@ -60,6 +60,8 @@ private:
   QTextEdit *_textEditor, *_resultEditor;
   const StringVector _sentenceEndings;
   QHash<QString, Node*> _graph;
+
+  int _sentenceIndexCounter;
 };
 
 #endif // MAINWINDOW_H
