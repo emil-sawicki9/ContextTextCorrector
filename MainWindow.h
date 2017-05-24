@@ -42,13 +42,19 @@ private:
   bool isSimilarWord(QString left, QString right);
 
   QVector<NodeVectorWeighted> findPathsBetweenTwoNodes(Node* start, Node* end, const int nodeCountBetween, const StringVector& words = StringVector());
+  QVector<NodeVectorWeighted> findPathsBeforeNode(Node* start, const int nodeCountBetween, const StringVector& words = StringVector());
+  QVector<NodeVectorWeighted> findPathsAfterNode(Node* start, const int nodeCountBetween, const StringVector& words = StringVector());
 
   void searchGraphDFS(Node* end, const int maxDepth,const int currentWeight, QStack<Node*>& stack, QVector<NodeVectorWeighted>& paths, const StringVector& words);
+  void searchGraphDFSBackward(const int maxDepth,const int currentWeight, QStack<Node*>& stack, QVector<NodeVectorWeighted>& paths, const StringVector& words);
+  void searchGraphDFSForward(const int maxDepth,const int currentWeight, QStack<Node*>& stack, QVector<NodeVectorWeighted>& paths, const StringVector& words);
 
   NodeVector& fixSentence(NodeVector& vector, const QStringList& sentence);
 
   QString findSentenceEndingMark(const QString& line);
   void parseToGraph(QString& sentence);
+
+  NodeVector findBestNodeVector(const QVector<NodeVectorWeighted>& paths);
 
   Node* setupConnection(Node* nodeLeft, const QString& nodeRightWord, const int sentenceIdx);
   Node* setupConnection(Node* nodeLeft, Node* nodeRight);

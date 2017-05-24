@@ -116,6 +116,20 @@ QString MainWindow::searchForSentence(QString sentence)
   return res.trimmed();
 }
 
+NodeVector MainWindow::findBestNodeVector(const QVector<NodeVectorWeighted> &paths)
+{
+  NodeVector alternativeNodes;
+  int currentEdgeSum = 0;
+  Q_FOREACH(NodeVectorWeighted vec, paths)
+  {
+    // TODO test on nodes with most similar indexes
+    if (vec.second >= currentEdgeSum)
+      alternativeNodes = vec.first;
+  }
+
+  return alternativeNodes;
+}
+
 NodeVector& MainWindow::fixSentence(NodeVector &vector, const QStringList& sentence)
 {
 #ifdef DEBUG
@@ -123,8 +137,9 @@ NodeVector& MainWindow::fixSentence(NodeVector &vector, const QStringList& sente
 #endif
   // length between pervious and next node
   int edgeLength = 1;
-  for (int i = 0 ; i < vector.count(); i ++)
+  for (int i = 0 ; i < vector.count(); i+=edgeLength)
   {
+    edgeLength = 1;
     if (vector.at(i) == 0)
     {
       // any next node after
@@ -140,11 +155,21 @@ NodeVector& MainWindow::fixSentence(NodeVector &vector, const QStringList& sente
         }
       }
 
-      if (i == 0) // fixing first word
+      if (i == 0) // fixing first words
       {
         if (nextNode) // something in sentence is correct
         {
-          // TODO fixing sentence when there is no FIRST word found
+          StringVector wordsToFix;
+          for(int k = i+edgeLength -2; k > -1; k--)
+            wordsToFix.push_back(sentence.at(k));
+          NodeVector alternativeNodes = findBestNodeVector(findPathsBeforeNode(nextNode, edgeLength-1, wordsToFix));
+
+          if (alternativeNodes.count() > 0)
+          {
+            alternativeNodes.pop_front();
+            for (int k = 0 ; k < alternativeNodes.length(); k++)
+              vector[i+k] = alternativeNodes[alternativeNodes.length() - k - 1];
+          }
 #ifdef DEBUG
           qDebug() << "fixing" << (edgeLength-1) << "---" << nextNode->word;
 #endif
@@ -160,7 +185,6 @@ NodeVector& MainWindow::fixSentence(NodeVector &vector, const QStringList& sente
         // node before searched one
         Node* perviousNode = vector.at(i-1);
 
-
         if (nextNode) // if only few words are incorrect
         {
 #ifdef DEBUG
@@ -169,18 +193,8 @@ NodeVector& MainWindow::fixSentence(NodeVector &vector, const QStringList& sente
           StringVector wordsToFix;
           for(int k = i ; k < i + edgeLength; k++)
             wordsToFix.push_back(sentence.at(k));
-//          for(int k = i ; k < i + edgeLength; k++)
-//            wordsToFix.push_back(sentence.at(k));
 
-          QVector<NodeVectorWeighted> paths = findPathsBetweenTwoNodes(perviousNode, nextNode, edgeLength-1, wordsToFix);
-          NodeVector alternativeNodes;
-          int currentEdgeSum = 0;
-          Q_FOREACH(NodeVectorWeighted vec, paths)
-          {
-            // TODO test on nodes with most similar indexes
-            if (vec.second >= currentEdgeSum)
-              alternativeNodes = vec.first;
-          }
+          NodeVector alternativeNodes = findBestNodeVector(findPathsBetweenTwoNodes(perviousNode, nextNode, edgeLength, wordsToFix));
 
           if (alternativeNodes.count() > 0)
           {
@@ -188,15 +202,22 @@ NodeVector& MainWindow::fixSentence(NodeVector &vector, const QStringList& sente
             alternativeNodes.pop_front();
 
             for (int k = 0 ; k < alternativeNodes.size() ; k++)
-            {
               vector[i + k ] = alternativeNodes[k];
-            }
           }
-          i+=edgeLength-1;
         }
-        else // if all words are incorrect
+        else // fixing last words
         {
-          // TODO when first word is found but any other
+          StringVector wordsToFix;
+          for(int k = i ; k < i + edgeLength; k++)
+            wordsToFix.push_back(sentence.at(k));
+          NodeVector alternativeNodes = findBestNodeVector(findPathsAfterNode(perviousNode, edgeLength, wordsToFix));
+
+          if (alternativeNodes.count() > 0)
+          {
+            alternativeNodes.pop_front();
+            for (int k = 0 ; k < alternativeNodes.length(); k++)
+              vector[i+k] = alternativeNodes[k];
+          }
         }
 
       }
@@ -211,10 +232,38 @@ QVector<NodeVectorWeighted> MainWindow::findPathsBetweenTwoNodes(Node *start, No
   QStack<Node*> stack;
   stack.push(start);
 #ifdef DEBUG
-  qDebug() << "SEARCHING PATH" << start->word << words << "DEPTH =" << nodeCountBetween;
+  qDebug() << "SEARCHING PATH BETWEEN" << start->word << end->word << words << "DEPTH =" << nodeCountBetween;
 #endif
 
-  searchGraphDFS(end, nodeCountBetween+2, 0, stack, paths, words);
+  searchGraphDFS(end, nodeCountBetween+1, 0, stack, paths, words);
+
+  return paths;
+}
+
+QVector<NodeVectorWeighted> MainWindow::findPathsBeforeNode(Node* start, const int nodeCountBetween, const StringVector &words)
+{
+  QVector<NodeVectorWeighted> paths;
+  QStack<Node*> stack;
+  stack.push(start);
+#ifdef DEBUG
+  qDebug() << "SEARCHING PATH FROM WORD BACKWARDS" << start->word << words << "DEPTH =" << nodeCountBetween;
+#endif
+
+  searchGraphDFSBackward(nodeCountBetween+1, 0, stack, paths, words);
+
+  return paths;
+}
+
+QVector<NodeVectorWeighted> MainWindow::findPathsAfterNode(Node* start, const int nodeCountBetween, const StringVector &words)
+{
+  QVector<NodeVectorWeighted> paths;
+  QStack<Node*> stack;
+  stack.push(start);
+#ifdef DEBUG
+  qDebug() << "SEARCHING PATH FROM WORD BACKWARDS" << start->word << words << "DEPTH =" << nodeCountBetween;
+#endif
+
+  searchGraphDFSForward(nodeCountBetween+1, 0, stack, paths, words);
 
   return paths;
 }
@@ -241,7 +290,7 @@ void MainWindow::searchGraphDFS(Node *end, const int maxDepth,const int currentW
     }
     else // search deeper
     {
-      const QString currentWord = words.at(stack.length()-1);
+      const QString& currentWord = words.at(stack.length()-1);
       Q_FOREACH(Edge *e, current->edgesOut)
       {
         if (isSimilarWord(currentWord, e->nodeEnd->word))
@@ -252,6 +301,93 @@ void MainWindow::searchGraphDFS(Node *end, const int maxDepth,const int currentW
             {
               stack.push(e->nodeEnd);
               searchGraphDFS(end, maxDepth, currentWeight + e->value, stack, paths, words);
+              break;
+            }
+          }
+          if (currentWord == e->nodeEnd->word)
+            break;
+        }
+      }
+      stack.pop();
+      return;
+    }
+  }
+}
+
+void MainWindow::searchGraphDFSBackward(const int maxDepth, const int currentWeight, QStack<Node *> &stack, QVector<NodeVectorWeighted> &paths, const StringVector &words)
+{
+  while(!stack.isEmpty())
+  {
+    Node* current = stack.top();
+    if (stack.length() == maxDepth)
+    {
+#ifdef DEBUG
+        QString t;
+        Q_FOREACH(Node* n, stack)
+          t += n->word + " ";
+        qDebug() << "appending" << t << " WEIGHT =" << currentWeight;
+#endif
+      paths.append(qMakePair(stack.toList().toVector(), currentWeight));
+      stack.pop();
+      return;
+    }
+    else // search deeper
+    {
+      const QString& currentWord = words.at(stack.length()-1);
+      qDebug() << words << stack.length();
+      Q_FOREACH(Edge *e, current->edgesIn)
+      {
+        if (isSimilarWord(currentWord, e->nodeStart->word))
+        {
+          Q_FOREACH(const int idx, e->nodeStart->sentenceIndexes)
+          {
+            if (current->sentenceIndexes.contains(idx))
+            {
+              stack.push(e->nodeStart);
+              searchGraphDFSBackward(maxDepth, currentWeight + e->value, stack, paths, words);
+              break;
+            }
+          }
+          if (currentWord == e->nodeStart->word)
+            break;
+        }
+      }
+      stack.pop();
+      return;
+    }
+  }
+}
+
+void MainWindow::searchGraphDFSForward(const int maxDepth, const int currentWeight, QStack<Node *> &stack, QVector<NodeVectorWeighted> &paths, const StringVector &words)
+{
+  while(!stack.isEmpty())
+  {
+    Node* current = stack.top();
+    if (stack.length() == maxDepth)
+    {
+#ifdef DEBUG
+        QString t;
+        Q_FOREACH(Node* n, stack)
+          t += n->word + " ";
+        qDebug() << "appending" << t << " WEIGHT =" << currentWeight;
+#endif
+      paths.append(qMakePair(stack.toList().toVector(), currentWeight));
+      stack.pop();
+      return;
+    }
+    else // search deeper
+    {
+      const QString& currentWord = words.at(stack.length()-1);
+      Q_FOREACH(Edge *e, current->edgesOut)
+      {
+        if (isSimilarWord(currentWord, e->nodeEnd->word))
+        {
+          Q_FOREACH(const int idx, e->nodeEnd->sentenceIndexes)
+          {
+            if (current->sentenceIndexes.contains(idx))
+            {
+              stack.push(e->nodeEnd);
+              searchGraphDFSForward(maxDepth, currentWeight + e->value, stack, paths, words);
               break;
             }
           }
