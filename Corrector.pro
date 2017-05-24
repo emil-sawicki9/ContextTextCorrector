@@ -24,6 +24,17 @@ DEFINES += QT_DEPRECATED_WARNINGS
 
 
 SOURCES += main.cpp\
-        MainWindow.cpp
+        MainWindow.cpp \
+    GraphSearcher.cpp \
+    GraphParser.cpp \
+    TextCorrector.cpp \
+    TimeElapser.cpp
 
-HEADERS  += MainWindow.h
+HEADERS  += MainWindow.h \
+    GraphSearcher.h \
+    GraphElements.h \
+    GraphParser.h \
+    TextCorrector.h \
+    TimeElapser.h
+
+DEFINES += DEBUG
