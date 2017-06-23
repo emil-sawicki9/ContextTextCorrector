@@ -27,7 +27,7 @@ void GraphParser::loadTextsToGraph()
   // TODO deleting all pointers in graph
   _graph.clear();
   // TODO searching folder txt folder or json folder for current language
-  const QString fileName = "text.txt";
+  const QString fileName = "texts/eng.txt";
   qDebug() << "LOADING DATA";
   QElapsedTimer timer;
   timer.start();

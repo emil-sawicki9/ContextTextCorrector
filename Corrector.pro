@@ -23,18 +23,18 @@ DEFINES += QT_DEPRECATED_WARNINGS
 #DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x060000    # disables all the APIs deprecated before Qt 6.0.0
 
 
-SOURCES += main.cpp\
-        MainWindow.cpp \
-    GraphSearcher.cpp \
-    GraphParser.cpp \
-    TextCorrector.cpp \
-    TimeElapser.cpp
+SOURCES += src/main.cpp\
+        src/MainWindow.cpp \
+    src/GraphSearcher.cpp \
+    src/GraphParser.cpp \
+    src/TextCorrector.cpp \
+    src/TimeElapser.cpp
 
-HEADERS  += MainWindow.h \
-    GraphSearcher.h \
-    GraphElements.h \
-    GraphParser.h \
-    TextCorrector.h \
-    TimeElapser.h
+HEADERS  += src/MainWindow.h \
+    src/GraphSearcher.h \
+    src/GraphElements.h \
+    src/GraphParser.h \
+    src/TextCorrector.h \
+    src/TimeElapser.h
 
 DEFINES += DEBUG
