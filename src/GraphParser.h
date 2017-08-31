@@ -10,7 +10,7 @@ public:
 
   const Graph& getGraph() const;
 
-  void loadTextsToGraph();
+  void loadTextsToGraph(const QString& fileName);
 
   Node* setupConnection(Node* nodeLeft, Node* nodeRight);
 private:
@@ -19,7 +19,8 @@ private:
   Node* setupConnection(Node* nodeLeft, const QString& nodeRightWord, const int sentenceIdx);
 
   int _sentenceIndexCounter;
-  int debugEdgeCounter;
+  int debugEdgeCounter, debugEdgeMaxCounter;
+  QString debugMostEdgeWord;
   Graph _graph;
 };
 

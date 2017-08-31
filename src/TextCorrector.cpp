@@ -2,22 +2,78 @@
 
 #include <QElapsedTimer>
 #include <QDebug>
+#include <QStringList>
 
 const StringVector TextCorrector::_sentenceEndings = StringVector() << "." << "!" << "?";
 TextCorrector::TextCorrector()
 {
-  _graphParser.loadTextsToGraph();
 }
 
-QString TextCorrector::searchForSentence(QString sentence)
+void TextCorrector::loadLanguage(const QString &fileName, const QString &lang)
 {
+  _graphParser.loadTextsToGraph(fileName);
+
+  _currentLang = lang;
+
+  currentLanguageChanged();
+}
+
+void TextCorrector::changeLanguage(const QString &fileName)
+{
+  _currentLang = fileName.split("/").last();
+  _currentLang.remove(".txt");
+  currentLanguageChanged();
+}
+
+QString TextCorrector::getCurrentLang() const
+{
+  return _currentLang;
+}
+
+QString TextCorrector::hintSentence(const QString &sentence)
+{
+  QString sentence_tmp = sentence;
+  QStringList words = sentence_tmp.split(' ');
+
+  // trimming and removing empty words
+  for (int i = 0 ; i < words.count(); i++)
+    words[i] = words.at(i).trimmed();
+
+  Node *perviousNode = _graphParser.getGraph()[words.at(words.count() - 2)];
+  if (!perviousNode)
+    return "Not found any hint.";
+
+  StringVector wordsToFix;
+  wordsToFix.push_back(words.last());
+  int edgeLength = 1;
+  NodeVector alternativeNodes = _graphSearcher.findPathsAfterNode(perviousNode, edgeLength, wordsToFix);
+
+  bool foundHint = false;
+  for (int i = 1 ; i < alternativeNodes.length(); i++)
+  {
+    if (words[words.length()-1] != alternativeNodes.at(i)->word)
+    {
+      words[words.length()-1] = "<font color=\"green\">" + alternativeNodes.at(i)->word + "</font>";
+      foundHint = true;
+    }
+  }
+
+  if (!foundHint)
+    return "No hint was found!";
+
+  return words.join(" ").trimmed();
+}
+
+QString TextCorrector::searchForSentence(const QString &sentence)
+{
+  QString sentence_tmp = sentence;
   QElapsedTimer timer;
   timer.start();
   // checking for ending mark
-  const QString ending = TextCorrector::findSentenceEndingMark(sentence);
-  sentence.remove(ending);
+  const QString ending = TextCorrector::findSentenceEndingMark(sentence_tmp);
+  sentence_tmp.remove(ending);
 
-  QStringList words = sentence.split(' ');
+  QStringList words = sentence_tmp.split(' ');
   if (!ending.isEmpty())
     words.append(ending);
 
@@ -70,7 +126,24 @@ QString TextCorrector::searchForSentence(QString sentence)
   }
   qDebug() << ">>> FIXED in " << timer.elapsed() << "ms <<<";
 #endif
-  return res.trimmed();
+
+  res = res.trimmed();
+
+  // highlighting words that were corrected
+  QString temporarySentence = sentence;
+  QStringList first = temporarySentence.replace(".", " .").replace(",", " ,").replace("  ", " ").trimmed().split(" ");
+  QStringList corrected = res.split(" ");
+
+  for (int i = 0 ; i < first.length(); i++)
+  {
+    if (first.at(i) != corrected.at(i))
+    {
+      corrected[i] = "<font color=\"red\">"+ corrected[i] + "</font>";
+    }
+  }
+
+  res = corrected.join(" ").replace(" .", ".").replace(" ,", ",").replace("  ", " ").trimmed();
+  return res;
 }
 
 NodeVector& TextCorrector::fixSentence(NodeVector &vector, const QStringList& sentence)
@@ -78,6 +151,9 @@ NodeVector& TextCorrector::fixSentence(NodeVector &vector, const QStringList& se
 #ifdef DEBUG
   qDebug() << "\nFIXING" << sentence.join(' ');
 #endif
+
+  int sentenceIdx = findSentenceIdx(vector);
+
   // length between pervious and next node
   int edgeLength = 1;
   for (int i = 0 ; i < vector.count(); i+=edgeLength)
@@ -137,7 +213,7 @@ NodeVector& TextCorrector::fixSentence(NodeVector &vector, const QStringList& se
           for(int k = i ; k < i + edgeLength; k++)
             wordsToFix.push_back(sentence.at(k));
 
-          NodeVector alternativeNodes = _graphSearcher.findPathsBetweenTwoNodes(perviousNode, nextNode, edgeLength, wordsToFix);
+          NodeVector alternativeNodes = _graphSearcher.findPathsBetweenTwoNodes(perviousNode, nextNode, edgeLength, wordsToFix, sentenceIdx);
 
           if (alternativeNodes.count() > 0)
           {
@@ -177,4 +253,36 @@ QString TextCorrector::findSentenceEndingMark(const QString &line)
       return end;
   }
   return QString();
+}
+
+int TextCorrector::findSentenceIdx(NodeVector &vector)
+{
+  QVector<int> indexes;
+  Q_FOREACH(Node* node, vector)
+  {
+    if (node)
+    {
+      if (indexes.length() == 0)
+      {
+        indexes = node->sentenceIndexes;
+        continue;
+      }
+      else
+      {
+        QVector<int> toRemove;
+        Q_FOREACH(const int idx, indexes)
+        {
+          if (!node->sentenceIndexes.contains(idx))
+            toRemove.push_back(idx);
+        }
+
+        Q_FOREACH(const int i, toRemove)
+        {
+          indexes.removeAll(i);
+        }
+      }
+    }
+  }
+
+  return indexes.at(0);
 }

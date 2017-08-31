@@ -22,12 +22,10 @@ const Graph& GraphParser::getGraph() const
   return _graph;
 }
 
-void GraphParser::loadTextsToGraph()
+void GraphParser::loadTextsToGraph(const QString &fileName)
 {
   // TODO deleting all pointers in graph
   _graph.clear();
-  // TODO searching folder txt folder or json folder for current language
-  const QString fileName = "texts/eng.txt";
   qDebug() << "LOADING DATA";
   QElapsedTimer timer;
   timer.start();
@@ -91,7 +89,7 @@ void GraphParser::loadTextsToGraph()
   else
     qDebug() << "CANNOT OPEN FILE" << (QDir::currentPath() + "/"+file.fileName()) << file.errorString();
 
-  qDebug() << "loaded" << _graph.count() << "words and" << debugEdgeCounter << "edges in " << timer.elapsed() << "ms";
+  qDebug() << "loaded" << _graph.count() << "words and" << debugEdgeCounter << "edges in" << timer.elapsed() << "ms.";
 }
 
 void GraphParser::parseToGraph(QString &sentence)
@@ -168,6 +166,11 @@ Node* GraphParser::setupConnection(Node *nodeLeft, Node *nodeRight)
     if (!nodeRight->edgesIn.contains(nodeLeft->word))
     {
       nodeRight->edgesIn.insert(nodeLeft->word, connection);
+    }
+    if (nodeLeft->edgesOut.count() > debugEdgeCounter)
+    {
+        debugEdgeMaxCounter = nodeLeft->edgesOut.count();
+        debugMostEdgeWord = nodeLeft->word;
     }
   }
   return nodeRight;

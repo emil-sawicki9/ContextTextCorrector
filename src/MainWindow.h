@@ -7,6 +7,7 @@
 
 
 class QTextEdit;
+class QLabel;
 
 class MainWindow : public QMainWindow
 {
@@ -14,15 +15,19 @@ class MainWindow : public QMainWindow
 
 public:
   MainWindow(QWidget *parent = 0);
-  ~MainWindow();
 
 private slots:
   void onEditorTextChanged();
   void onCheckSpelling();
+  void onHint();
+  void onLoadFileAction();
+  void onChangeLanguageAction();
+  void onCurrentLangChanged();
 
 private:
   QTextEdit *_textEditor, *_resultEditor;
   TextCorrector _corrector;
+  QLabel *_currLangLabel;
 };
 
 #endif // MAINWINDOW_H

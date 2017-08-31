@@ -8,7 +8,7 @@ GraphSearcher::GraphSearcher()
 
 }
 
-NodeVector GraphSearcher::findPathsBetweenTwoNodes(Node *start, Node *end, const int nodeCountBetween, const StringVector& words)
+NodeVector GraphSearcher::findPathsBetweenTwoNodes(Node *start, Node *end, const int nodeCountBetween, const StringVector& words, const int sentenceId)
 {
   QVector<NodeVectorWeighted> paths;
   QStack<Node*> stack;
@@ -16,6 +16,8 @@ NodeVector GraphSearcher::findPathsBetweenTwoNodes(Node *start, Node *end, const
 #ifdef DEBUG
   qDebug() << "SEARCHING PATH BETWEEN" << start->word << end->word << words << "DEPTH =" << nodeCountBetween;
 #endif
+
+  currentSentenceId = sentenceId;
 
   searchGraphDFS(end, nodeCountBetween+1, 0, stack, paths, words);
 
@@ -75,19 +77,24 @@ void GraphSearcher::searchGraphDFS(Node *end, const int maxDepth,const int curre
       const QString& currentWord = words.at(stack.length()-1);
       Q_FOREACH(Edge *e, current->edgesOut)
       {
-        if (isSimilarWord(currentWord, e->nodeEnd->word))
+        Q_FOREACH(const int idx, e->nodeEnd->sentenceIndexes)
         {
-          Q_FOREACH(const int idx, e->nodeEnd->sentenceIndexes)
+          if (currentSentenceId == idx)
           {
-            if (current->sentenceIndexes.contains(idx))
-            {
-              stack.push(e->nodeEnd);
-              searchGraphDFS(end, maxDepth, currentWeight + e->value, stack, paths, words);
-              break;
-            }
-          }
-          if (currentWord == e->nodeEnd->word)
+            stack.push(e->nodeEnd);
+            searchGraphDFS(end, maxDepth, currentWeight + e->value, stack, paths, words);
             break;
+          }
+        }
+
+        Q_FOREACH(const int idx, e->nodeEnd->sentenceIndexes)
+        {
+          if (e->nodeEnd->sentenceIndexes.contains(idx) && end->sentenceIndexes.contains(idx) && isSimilarWord(currentWord, e->nodeEnd->word))
+          {
+            stack.push(e->nodeEnd);
+            searchGraphDFS(end, maxDepth, currentWeight + e->value, stack, paths, words);
+            break;
+          }
         }
       }
       stack.pop();
@@ -118,19 +125,19 @@ void GraphSearcher::searchGraphDFSBackward(const int maxDepth, const int current
       const QString& currentWord = words.at(stack.length()-1);
       Q_FOREACH(Edge *e, current->edgesIn)
       {
-        if (isSimilarWord(currentWord, e->nodeStart->word))
+        Q_FOREACH(const int idx, e->nodeStart->sentenceIndexes)
         {
-          Q_FOREACH(const int idx, e->nodeStart->sentenceIndexes)
+          if (current->sentenceIndexes.contains(idx))
           {
-            if (current->sentenceIndexes.contains(idx))
+            if (isSimilarWord(currentWord, e->nodeStart->word))
             {
               stack.push(e->nodeStart);
               searchGraphDFSBackward(maxDepth, currentWeight + e->value, stack, paths, words);
               break;
             }
+//            if (currentWord == e->nodeStart->word)
+//              break;
           }
-          if (currentWord == e->nodeStart->word)
-            break;
         }
       }
       stack.pop();
@@ -161,19 +168,19 @@ void GraphSearcher::searchGraphDFSForward(const int maxDepth, const int currentW
       const QString& currentWord = words.at(stack.length()-1);
       Q_FOREACH(Edge *e, current->edgesOut)
       {
-        if (isSimilarWord(currentWord, e->nodeEnd->word))
+        Q_FOREACH(const int idx, e->nodeEnd->sentenceIndexes)
         {
-          Q_FOREACH(const int idx, e->nodeEnd->sentenceIndexes)
+          if (current->sentenceIndexes.contains(idx))
           {
-            if (current->sentenceIndexes.contains(idx))
+            if (isSimilarWord(currentWord, e->nodeEnd->word))
             {
               stack.push(e->nodeEnd);
               searchGraphDFSForward(maxDepth, currentWeight + e->value, stack, paths, words);
               break;
             }
+//        if (currentWord == e->nodeEnd->word)
+//          break;
           }
-          if (currentWord == e->nodeEnd->word)
-            break;
         }
       }
       stack.pop();
@@ -202,39 +209,48 @@ bool GraphSearcher::isSimilarWord(QString left, QString right)
   const int end = (int)'z';
   std::sort(left.begin(), left.end());
   std::sort(right.begin(), right.end());
+  QString searchedWord, baseWord;
   // when words have same length
   if (left.length() == right.length())
   {
-    if (left == right)
-      return true;
+        if (left == right)
+            return true;
   }
   // when word is bigger than node word
   else if (left.length() > right.length())
   {
-    for (int i = start ; i <= end; i++)
-    {
-      QString tmpWord = right + (char)i;
-      std::sort(tmpWord.begin(), tmpWord.end());
-      if (tmpWord == left)
-      {
-        return true;
-      }
-    }
+      baseWord = right;
+      searchedWord = left;
   }
   // when word is smaller than node word
   else
   {
-    for (int i = start ; i <= end; i++)
-    {
-      QString tmpWord = left + (char)i;
-      std::sort(tmpWord.begin(), tmpWord.end());
-      if (tmpWord == right)
-      {
-        return true;
-      }
-    }
+      baseWord = left;
+      searchedWord = right;
   }
+
+
+
+  QString tmpBase = baseWord;
+  for (int l = 0 ; l < searchedWord.length() - baseWord.length(); l++)
+  {
+      for (int i = start ; i <= end; i++)
+      {
+        QString tmpWord = baseWord + (char)i;
+        std::sort(tmpWord.begin(), tmpWord.end());
+        if (tmpWord == searchedWord)
+        {
+          return true;
+        }
+      }
+  }
+
   return false;
+}
+
+void GraphSearcher::findSimilarWord(const int length, const QString &word, const QString &searchedWord)
+{
+
 }
 
 Node* GraphSearcher::findNodeWithSimilarWord(const QString &word, NodeVector &vec)

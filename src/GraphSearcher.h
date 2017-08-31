@@ -8,7 +8,7 @@ class GraphSearcher
 public:
   GraphSearcher();
 
-  NodeVector findPathsBetweenTwoNodes(Node* start, Node* end, const int nodeCountBetween, const StringVector& words = StringVector());
+  NodeVector findPathsBetweenTwoNodes(Node* start, Node* end, const int nodeCountBetween, const StringVector& words, const int sentenceId);
   NodeVector findPathsBeforeNode(Node* start, const int nodeCountBetween, const StringVector& words = StringVector());
   NodeVector findPathsAfterNode(Node* start, const int nodeCountBetween, const StringVector& words = StringVector());
 
@@ -20,7 +20,13 @@ public:
 
   bool isSimilarWord(QString left, QString right);
 
+  void findSimilarWord(const int length, const QString &word, const QString &searchedWord);
+
   Node* findNodeWithSimilarWord(const QString& word, NodeVector& vec);
+
+private:
+  int currentSentenceId;
+
 };
 
 #endif // GRAPHSEARCHER_H
