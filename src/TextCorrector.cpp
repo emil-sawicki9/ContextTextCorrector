@@ -20,6 +20,7 @@ void TextCorrector::loadLanguage(const QString &fileName, const QString &lang)
 
 void TextCorrector::changeLanguage(const QString &fileName)
 {
+  _graphParser.loadTextsToGraph(fileName);
   _currentLang = fileName.split("/").last();
   _currentLang.remove(".txt");
   currentLanguageChanged();
@@ -75,11 +76,12 @@ QString TextCorrector::searchForSentence(const QString &sentence)
 
   QStringList words = sentence_tmp.split(' ');
   if (!ending.isEmpty())
-    words.append(ending);
+    words.removeAll(ending);
 
   // trimming and removing empty words
   for (int i = 0 ; i < words.count(); i++)
     words[i] = words.at(i).trimmed();
+  words.removeAll(QString());
 
   NodeVector sentenceNodes;
   // getting first node
@@ -108,23 +110,24 @@ QString TextCorrector::searchForSentence(const QString &sentence)
   // adding ending node to end of sentence if not found
   if (!ending.isEmpty() && sentenceNodes.last() == 0)
   {
-    Node* endingNode = _graphParser.getGraph()[ending];
-    _graphParser.setupConnection(node, endingNode);
-    sentenceNodes[sentenceNodes.length() - 1] = endingNode;
+//    Node* endingNode = _graphParser.getGraph()[ending];
+//    _graphParser.setupConnection(node, endingNode);
+//    sentenceNodes[sentenceNodes.length() - 1] = endingNode;
   }
 
   if (!foundAll)
     fixSentence(sentenceNodes, words);
 #ifdef DEBUG
   QString res = QString();
-  Q_FOREACH(Node* n, sentenceNodes)
+  for (int i = 0 ; i < sentenceNodes.length(); i++)
   {
+    Node *n = sentenceNodes.at(i);
     if (n)
       res += n->word + " ";
     else
-      res += "NULL ";
+      res += words.at(i) +" ";
   }
-  qDebug() << ">>> FIXED in " << timer.elapsed() << "ms <<<";
+  qDebug() << ">>> FIXED in " << timer.elapsed() << "ms <<<" << res;
 #endif
 
   res = res.trimmed();
@@ -134,8 +137,11 @@ QString TextCorrector::searchForSentence(const QString &sentence)
   QStringList first = temporarySentence.replace(".", " .").replace(",", " ,").replace("  ", " ").trimmed().split(" ");
   QStringList corrected = res.split(" ");
 
+  qDebug() << first << " | " << corrected;
   for (int i = 0 ; i < first.length(); i++)
   {
+    if (i == corrected.length())
+      corrected.append(first.at(i));
     if (first.at(i) != corrected.at(i))
     {
       corrected[i] = "<font color=\"red\">"+ corrected[i] + "</font>";
@@ -148,11 +154,11 @@ QString TextCorrector::searchForSentence(const QString &sentence)
 
 NodeVector& TextCorrector::fixSentence(NodeVector &vector, const QStringList& sentence)
 {
-#ifdef DEBUG
-  qDebug() << "\nFIXING" << sentence.join(' ');
-#endif
 
   int sentenceIdx = findSentenceIdx(vector);
+#ifdef DEBUG
+  qDebug() << "\nFIXING" << sentence.join(' ') << " | sent idx = " << sentenceIdx;
+#endif
 
   // length between pervious and next node
   int edgeLength = 1;
@@ -284,5 +290,6 @@ int TextCorrector::findSentenceIdx(NodeVector &vector)
     }
   }
 
+  qDebug() << indexes;
   return indexes.at(0);
 }

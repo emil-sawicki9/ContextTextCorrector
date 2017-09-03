@@ -65,7 +65,7 @@ void GraphSearcher::searchGraphDFS(Node *end, const int maxDepth,const int curre
         QString t;
         Q_FOREACH(Node* n, stack)
           t += n->word + " ";
-        qDebug() << "appending" << t << " WEIGHT =" << currentWeight;
+        qDebug() << Q_FUNC_INFO << "appending" << t << " WEIGHT =" << currentWeight;
 #endif
         paths.append(qMakePair(stack.toList().toVector(), currentWeight));
       }
@@ -195,9 +195,11 @@ NodeVector GraphSearcher::findBestNodeVector(const QVector<NodeVectorWeighted> &
   int currentEdgeSum = 0;
   Q_FOREACH(NodeVectorWeighted vec, paths)
   {
-    // TODO test on nodes with most similar indexes
     if (vec.second >= currentEdgeSum)
+    {
+      currentEdgeSum = vec.second;
       alternativeNodes = vec.first;
+    }
   }
 
   return alternativeNodes;
