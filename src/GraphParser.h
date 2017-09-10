@@ -1,10 +1,14 @@
 #ifndef GRAPHPARSER_H
 #define GRAPHPARSER_H
 
+#include <QObject>
+#include <QFile>
+
 #include "GraphElements.h"
 
-class GraphParser
+class GraphParser : public QObject
 {
+  Q_OBJECT
 public:
   GraphParser();
 
@@ -12,8 +16,18 @@ public:
 
   void loadTextsToGraph(const QString& fileName);
 
+  void deleteGraph();
+
   Node* setupConnection(Node* nodeLeft, Node* nodeRight);
+
+signals:
+  void finishedLoadingGraph();
+  void valueChanged(int);
+
+
 private:
+  void createGraph(QByteArray &text);
+
   void parseToGraph(QString& sentence);
 
   Node* setupConnection(Node* nodeLeft, const QString& nodeRightWord, const int sentenceIdx);

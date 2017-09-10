@@ -14,7 +14,10 @@
 #include <QListWidget>
 #include <QDialogButtonBox>
 #include <QMessageBox>
+#include <QTimer>
 
+
+MainWindow* MainWindow::_instance = 0;
 MainWindow::MainWindow(QWidget *parent)
   : QMainWindow(parent)
 {
@@ -26,6 +29,7 @@ MainWindow::MainWindow(QWidget *parent)
   lay->addWidget(_textEditor);
   _resultEditor = new QTextEdit(this);
   _resultEditor->setReadOnly(true);
+  _resultEditor->setAcceptRichText(true);
   QHBoxLayout *butLay = new QHBoxLayout();
   QPushButton * spellingBut = new QPushButton("Correct text", this);
   spellingBut->setMaximumWidth(100);
@@ -61,18 +65,13 @@ MainWindow::MainWindow(QWidget *parent)
   // status bar
   _currLangLabel = new QLabel(this);
   this->statusBar()->addWidget(_currLangLabel);
-  connect(&_corrector, &TextCorrector::currentLanguageChanged, this, &MainWindow::onCurrentLangChanged);
+}
 
-  QString engLangFile("texts/eng.txt");
-  if (QFile::exists(engLangFile))
-  {
-    _corrector.loadLanguage(engLangFile, "eng");
-  }
-  else
-    onChangeLanguageAction();
-
-  _textEditor->setPlainText(QString("There were doors all round the hall"));
-//  QTimer::singleShot(0, this, &MainWindow::close);
+void MainWindow::init()
+{
+  _corrector = new TextCorrector();
+  connect(_corrector, &TextCorrector::currentLanguageChanged, this, &MainWindow::onCurrentLangChanged);
+  QTimer::singleShot(10, this, &MainWindow::loadLanguageOnStart);
 }
 
 void MainWindow::onHint()
@@ -82,7 +81,7 @@ void MainWindow::onHint()
   if (lastSentence.split(" ").length() < 2)
     _resultEditor->setText("Not enough data to hint word");
   else
-    _resultEditor->setText(_corrector.hintSentence(lastSentence));
+    _corrector->hintSentenceWithGraph(lastSentence);
 }
 
 void MainWindow::onLoadFileAction()
@@ -90,7 +89,7 @@ void MainWindow::onLoadFileAction()
   QString fileName = QFileDialog::getOpenFileName(0, "Language file", QString(), "*.txt");
   QFile::copy(fileName, "texts/"+fileName.split("/").last());
   if (!fileName.isEmpty())
-    _corrector.changeLanguage(fileName);
+    _corrector->changeLanguage(fileName);
 }
 
 void MainWindow::onChangeLanguageAction()
@@ -129,21 +128,47 @@ void MainWindow::onChangeLanguageAction()
     dlg.exec();
 
     if (list->count() && list->currentRow() >= 0)
-      _corrector.changeLanguage(files.at(list->currentRow()));
+      _corrector->changeLanguage(files.at(list->currentRow()));
   }
 }
 
 void MainWindow::onCurrentLangChanged()
 {
-  _currLangLabel->setText("Current language: <b>"+_corrector.getCurrentLang()+"</b>");
+  _currLangLabel->setText("Current language: <b>"+_corrector->getCurrentLang()+"</b>");
 }
 
 void MainWindow::onCheckSpelling()
 {
-  _resultEditor->setText(_corrector.searchForSentence(_textEditor->toPlainText()));
+  _corrector->searchForSentence(_textEditor->toPlainText());
 }
 
 void MainWindow::onEditorTextChanged()
 {
 //  qDebug() << _textEditor->toPlainText();
+}
+
+void MainWindow::loadLanguageOnStart()
+{
+  QString engLangFile("texts/eng.txt");
+  if (QFile::exists(engLangFile))
+  {
+    _corrector->loadLanguage(engLangFile, "eng");
+  }
+  else
+    onChangeLanguageAction();
+}
+
+MainWindow* MainWindow::instance()
+{
+  if (!_instance)
+  {
+    _instance = new MainWindow();
+    _instance->init();
+  }
+  return _instance;
+}
+
+void MainWindow::updateResult(const QString &result)
+{
+   _resultEditor->setText(result);
 }

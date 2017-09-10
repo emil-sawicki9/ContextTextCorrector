@@ -7,6 +7,7 @@ class TimeElapser : public QElapsedTimer
 {
 public:
   static TimeElapser* instance();
+
 private:
   TimeElapser();
   static TimeElapser* _instance;

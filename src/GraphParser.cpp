@@ -7,8 +7,12 @@
 #include <QTimer>
 #include <QStack>
 #include <QElapsedTimer>
+#include <QProgressDialog>
+#include <QtConcurrent/QtConcurrent>
 
 #include "TextCorrector.h"
+#include "TimeElapser.h"
+#include "MainWindow.h"
 
 GraphParser::GraphParser()
   : _sentenceIndexCounter(0)
@@ -33,58 +37,19 @@ void GraphParser::loadTextsToGraph(const QString &fileName)
   QFile file(fileName);
   if (file.open(QIODevice::ReadOnly))
   {
-    QTextStream in(&file);
-    QString sentence = QString();
-    while (!in.atEnd())
-    {
-      // reading line and removing special signs
-      QString line = in.readLine().trimmed();
-      if (line.startsWith("#") || line.startsWith("*") || line.contains("http:") || line.contains("-") || line.contains("@"))
-        continue;
+    QByteArray text = file.readAll();
 
-      line.remove("‘").remove("\"").remove("’").replace(";", ".").remove(",");
+    int maximum = QString(text).split("\n").count();
+    QProgressDialog *progress = new QProgressDialog(QStringLiteral("Creating graph.."), QString(), 0, maximum, MainWindow::instance());
+    progress->setCancelButton(0);
+    progress->setWindowTitle(tr(""));
+    progress->setWindowModality(Qt::WindowModal);
+    connect(this, &GraphParser::valueChanged, progress, &QProgressDialog::setValue);
+    progress->show();
 
-      // finding sentence ending mark
-      QString ending = TextCorrector::findSentenceEndingMark(line);
-      if (!ending.isEmpty())
-      {
-        QStringList sentences = line.split(ending);
-        sentence += sentences.at(0) + ending;
+    connect(this, &GraphParser::finishedLoadingGraph, progress, &QProgressDialog::deleteLater);
 
-        sentence = sentence.trimmed();
-
-        // getting sentence out of parentheses
-        int idxParLeft = sentence.indexOf("(");
-        int idxParRight = sentence.indexOf(")");
-        if (idxParLeft != -1 && idxParRight != 1)
-        {
-          QString subsentence = sentence.mid(idxParLeft+1, idxParRight - idxParLeft-1);
-          QString subEnding = TextCorrector::findSentenceEndingMark(subsentence);
-          if (subEnding.isEmpty())
-            subsentence.append(".");
-
-          parseToGraph(subsentence);
-
-          sentence.remove(idxParLeft, idxParRight - idxParLeft +1);
-        }
-
-        // parsing sentence
-        parseToGraph(sentence);
-
-        sentence = sentences.at(1);
-      }
-      else if (line.isEmpty() && !sentence.isEmpty())
-      {
-        // if line have no ending and has new line after it
-        // (it's probably some book notes then)
-        sentence = QString();
-      }
-      else
-      {
-        // appending new line to sentence
-        sentence += line + " ";
-      }
-    }
+    QtConcurrent::run(this, &GraphParser::createGraph, text);
   }
   else
     qDebug() << "CANNOT OPEN FILE" << (QDir::currentPath() + "/"+file.fileName()) << file.errorString();
@@ -194,4 +159,86 @@ Node* GraphParser::setupConnection(Node *nodeLeft, const QString& nodeRightWord,
   }
 
   return setupConnection(nodeLeft, nodeRight);
+}
+
+void GraphParser::deleteGraph()
+{
+  QListIterator<Node*> i(_graph.values());
+  while(i.hasNext())
+  {
+    Node *n = i.next();
+    Q_FOREACH(Edge *e, n->edgesIn)
+    {
+      if (e)
+        delete e;
+    }
+    Q_FOREACH(Edge *e, n->edgesOut)
+    {
+      if (e)
+        delete e;
+    }
+    delete n;
+  }
+  _graph.clear();
+}
+
+void GraphParser::createGraph(QByteArray &text)
+{
+  int currentLine = 0;
+  QTextStream in(&text);
+  QString sentence = QString();
+  while (!in.atEnd())
+  {
+    ++currentLine;
+    if (currentLine % 1000 == 0)
+      emit valueChanged(currentLine);
+    // reading line and removing special signs
+    QString line = in.readLine().trimmed();
+    if (line.startsWith("#") || line.startsWith("*") || line.contains("http:") || line.contains("-") || line.contains("@"))
+      continue;
+
+    line.remove("‘").remove("\"").remove("’").replace(";", ".").remove(",");
+
+    // finding sentence ending mark
+    QString ending = TextCorrector::findSentenceEndingMark(line);
+    if (!ending.isEmpty())
+    {
+      QStringList sentences = line.split(ending);
+      sentence += sentences.at(0) + ending;
+
+      sentence = sentence.trimmed();
+
+      // getting sentence out of parentheses
+      int idxParLeft = sentence.indexOf("(");
+      int idxParRight = sentence.indexOf(")");
+      if (idxParLeft != -1 && idxParRight != 1)
+      {
+        QString subsentence = sentence.mid(idxParLeft+1, idxParRight - idxParLeft-1);
+        QString subEnding = TextCorrector::findSentenceEndingMark(subsentence);
+        if (subEnding.isEmpty())
+          subsentence.append(".");
+
+        parseToGraph(subsentence);
+
+        sentence.remove(idxParLeft, idxParRight - idxParLeft +1);
+      }
+
+      // parsing sentence
+      parseToGraph(sentence);
+
+      sentence = sentences.at(1);
+    }
+    else if (line.isEmpty() && !sentence.isEmpty())
+    {
+      // if line have no ending and has new line after it
+      // (it's probably some book notes then)
+      sentence = QString();
+    }
+    else
+    {
+      // appending new line to sentence
+      sentence += line + " ";
+    }
+  }
+  emit finishedLoadingGraph();
 }

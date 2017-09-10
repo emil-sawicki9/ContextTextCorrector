@@ -12,21 +12,27 @@ class TextCorrector: public QObject
 public:
   TextCorrector();
 
-  QString searchForSentence(const QString &sentence);
-  QString hintSentence(const QString& sentence);
+  void searchForSentence(const QString &sentence);
+  void hintSentenceWithGraph(const QString& sentence);
   static QString findSentenceEndingMark(const QString& line);
 
-  void loadLanguage(const QString& fileName, const QString& lang);
   void changeLanguage(const QString& fileName);
 
   QString getCurrentLang() const;
 
+  void loadLanguage(const QString& fileName, const QString& lang);
+
 signals:
   void currentLanguageChanged();
+  void valueChanged(int);
+  void finishedWork(QString);
 
 private:
-  NodeVector& fixSentence(NodeVector& vector, const QStringList& sentence);
-  int findSentenceIdx(NodeVector& vector);
+  QString parseFixedResultSentence(const NodeVector &vector, const QStringList& sentence);
+  void hintSentence(Node* node, const QStringList &words);
+  void fixSentence(const NodeVector &vector,const QStringList &words, const QString &sentence);
+  QVector<NodeVector> fixSentenceWithGraph(const NodeVector& vector, const QStringList& sentence);
+  QVector<int> findSentenceIdx(const NodeVector& vector);
 
   static const StringVector _sentenceEndings;
 

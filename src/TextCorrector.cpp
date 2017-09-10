@@ -3,27 +3,31 @@
 #include <QElapsedTimer>
 #include <QDebug>
 #include <QStringList>
+#include "TimeElapser.h"
+#include "MainWindow.h"
+#include <QtConcurrent/QtConcurrent>
 
 const StringVector TextCorrector::_sentenceEndings = StringVector() << "." << "!" << "?";
 TextCorrector::TextCorrector()
 {
+  connect(&_graphParser, &GraphParser::finishedLoadingGraph, this, &TextCorrector::currentLanguageChanged);
+  connect(this, &TextCorrector::finishedWork, MainWindow::instance(), &MainWindow::updateResult);
 }
 
 void TextCorrector::loadLanguage(const QString &fileName, const QString &lang)
 {
-  _graphParser.loadTextsToGraph(fileName);
-
   _currentLang = lang;
 
-  currentLanguageChanged();
+  _graphParser.loadTextsToGraph(fileName);
 }
 
 void TextCorrector::changeLanguage(const QString &fileName)
 {
-  _graphParser.loadTextsToGraph(fileName);
+  _graphParser.deleteGraph();
   _currentLang = fileName.split("/").last();
   _currentLang.remove(".txt");
-  currentLanguageChanged();
+
+  _graphParser.loadTextsToGraph(fileName);
 }
 
 QString TextCorrector::getCurrentLang() const
@@ -31,7 +35,7 @@ QString TextCorrector::getCurrentLang() const
   return _currentLang;
 }
 
-QString TextCorrector::hintSentence(const QString &sentence)
+void TextCorrector::hintSentenceWithGraph(const QString &sentence)
 {
   QString sentence_tmp = sentence;
   QStringList words = sentence_tmp.split(' ');
@@ -42,34 +46,50 @@ QString TextCorrector::hintSentence(const QString &sentence)
 
   Node *perviousNode = _graphParser.getGraph()[words.at(words.count() - 2)];
   if (!perviousNode)
-    return "Not found any hint.";
+    emit finishedWork(QStringLiteral("Not found any hint."));
 
-  StringVector wordsToFix;
-  wordsToFix.push_back(words.last());
-  int edgeLength = 1;
-  NodeVector alternativeNodes = _graphSearcher.findPathsAfterNode(perviousNode, edgeLength, wordsToFix);
+  QProgressDialog *progress = new QProgressDialog(QStringLiteral("Searching for hint.."), QString(), 0, perviousNode->edgesOut.count(), MainWindow::instance());
+  progress->setCancelButton(0);
+  progress->setWindowTitle(tr(""));
+  progress->setWindowModality(Qt::WindowModal);
+  connect(&_graphSearcher, &GraphSearcher::valueChanged, progress, &QProgressDialog::setValue);
+  progress->show();
 
-  bool foundHint = false;
-  for (int i = 1 ; i < alternativeNodes.length(); i++)
-  {
-    if (words[words.length()-1] != alternativeNodes.at(i)->word)
-    {
-      words[words.length()-1] = "<font color=\"green\">" + alternativeNodes.at(i)->word + "</font>";
-      foundHint = true;
-    }
-  }
+  connect(this, &TextCorrector::finishedWork, progress, &QProgressDialog::deleteLater);
 
-  if (!foundHint)
-    return "No hint was found!";
+  QtConcurrent::run(this, &TextCorrector::hintSentence, perviousNode, words);
 
-  return words.join(" ").trimmed();
 }
 
-QString TextCorrector::searchForSentence(const QString &sentence)
+void TextCorrector::hintSentence(Node *node, const QStringList &words)
+{
+  QVector<NodeVector> alternativeNodes = _graphSearcher.findPathsAfterNode(node, 1, StringVector() << words.last());
+
+  if (alternativeNodes.count() > 0)
+  {
+    QStringList res;
+    Q_FOREACH(const NodeVector &vec, alternativeNodes)
+    {
+      QStringList words_tmp = words;
+      for (int i = 1 ; i < vec.length(); i++)
+      {
+        if (words_tmp[words_tmp.length()-1] != vec.at(i)->word)
+        {
+          words_tmp[words.length()-1] = "<font color=\"green\">" + vec.at(i)->word + "</font>";
+        }
+      }
+      res.append(words_tmp.join(" "));
+    }
+    emit finishedWork(res.join("<br>"));
+  }
+  else
+    emit finishedWork(QStringLiteral("No hint was found!"));
+}
+
+void TextCorrector::searchForSentence(const QString &sentence)
 {
   QString sentence_tmp = sentence;
-  QElapsedTimer timer;
-  timer.start();
+  TimeElapser::instance()->start();
   // checking for ending mark
   const QString ending = TextCorrector::findSentenceEndingMark(sentence_tmp);
   sentence_tmp.remove(ending);
@@ -116,46 +136,68 @@ QString TextCorrector::searchForSentence(const QString &sentence)
   }
 
   if (!foundAll)
-    fixSentence(sentenceNodes, words);
-#ifdef DEBUG
-  QString res = QString();
-  for (int i = 0 ; i < sentenceNodes.length(); i++)
   {
-    Node *n = sentenceNodes.at(i);
-    if (n)
-      res += n->word + " ";
-    else
-      res += words.at(i) +" ";
+    QProgressDialog *progress = new QProgressDialog(QStringLiteral("Fixing sentence.."), QString(), 0, sentenceNodes.count(), MainWindow::instance());
+    progress->setCancelButton(0);
+    progress->setWindowTitle(tr(""));
+    progress->setWindowModality(Qt::WindowModal);
+    connect(this, &TextCorrector::valueChanged, progress, &QProgressDialog::setValue);
+    progress->show();
+
+    connect(this, &TextCorrector::finishedWork, progress, &QProgressDialog::deleteLater);
+
+    QtConcurrent::run(this, &TextCorrector::fixSentence, sentenceNodes, words, sentence);
   }
-  qDebug() << ">>> FIXED in " << timer.elapsed() << "ms <<<" << res;
-#endif
-
-  res = res.trimmed();
-
-  // highlighting words that were corrected
-  QString temporarySentence = sentence;
-  QStringList first = temporarySentence.replace(".", " .").replace(",", " ,").replace("  ", " ").trimmed().split(" ");
-  QStringList corrected = res.split(" ");
-
-  qDebug() << first << " | " << corrected;
-  for (int i = 0 ; i < first.length(); i++)
+  else
   {
-    if (i == corrected.length())
-      corrected.append(first.at(i));
-    if (first.at(i) != corrected.at(i))
-    {
-      corrected[i] = "<font color=\"red\">"+ corrected[i] + "</font>";
-    }
+    emit finishedWork(parseFixedResultSentence(sentenceNodes,words));
   }
-
-  res = corrected.join(" ").replace(" .", ".").replace(" ,", ",").replace("  ", " ").trimmed();
-  return res;
 }
 
-NodeVector& TextCorrector::fixSentence(NodeVector &vector, const QStringList& sentence)
+void TextCorrector::fixSentence(const NodeVector &vector, const QStringList &words, const QString &sentence)
 {
+  QVector<NodeVector> fixes = fixSentenceWithGraph(vector, words);
+  if (fixes.isEmpty())
+  {
+    emit finishedWork(parseFixedResultSentence(vector,words));
+    return;
+  }
 
-  int sentenceIdx = findSentenceIdx(vector);
+  QStringList fixesForSent;
+  int i = 0;
+  Q_FOREACH(const NodeVector &vec, fixes)
+  {
+    emit valueChanged(++i);
+    QString res = parseFixedResultSentence(vec, words).trimmed();
+
+    // highlighting words that were corrected
+    QString temporarySentence = sentence;
+    QStringList first = temporarySentence.replace(".", " .").replace(",", " ,").replace("  ", " ").trimmed().split(" ");
+    QStringList corrected = res.split(" ");
+
+    for (int i = 0 ; i < first.length(); i++)
+    {
+      if (i == corrected.length())
+        corrected.append(first.at(i));
+      if (first.at(i) != corrected.at(i))
+      {
+        corrected[i] = "<font color=\"red\">"+ corrected[i] + "</font>";
+      }
+    }
+
+    res = corrected.join(" ").replace(" .", ".").replace(" ,", ",").replace("  ", " ").trimmed();
+    fixesForSent.append(res);
+  }
+#ifdef DEBUG
+    qDebug() << ">>> FIXED in " << TimeElapser::instance()->elapsed() << "ms <<<" << fixesForSent;
+#endif
+  emit finishedWork(fixesForSent.join("<br>"));
+}
+
+QVector<NodeVector> TextCorrector::fixSentenceWithGraph(const NodeVector &vector, const QStringList& sentence)
+{
+  QVector<NodeVector> res;
+  QVector<int> sentenceIdx = findSentenceIdx(vector);
 #ifdef DEBUG
   qDebug() << "\nFIXING" << sentence.join(' ') << " | sent idx = " << sentenceIdx;
 #endif
@@ -187,13 +229,19 @@ NodeVector& TextCorrector::fixSentence(NodeVector &vector, const QStringList& se
           StringVector wordsToFix;
           for(int k = i+edgeLength -2; k > -1; k--)
             wordsToFix.push_back(sentence.at(k));
-          NodeVector alternativeNodes = _graphSearcher.findPathsBeforeNode(nextNode, edgeLength-1, wordsToFix);
+
+          QVector<NodeVector> alternativeNodes = _graphSearcher.findPathsBeforeNode(nextNode, edgeLength-1, wordsToFix);
 
           if (alternativeNodes.count() > 0)
           {
-            alternativeNodes.pop_front();
-            for (int k = 0 ; k < alternativeNodes.length(); k++)
-              vector[i+k] = alternativeNodes[alternativeNodes.length() - k - 1];
+            Q_FOREACH(NodeVector vec, alternativeNodes)
+            {
+              vec.pop_front();
+              NodeVector fix = vector;
+              for (int k = 0 ; k < vec.length(); k++)
+                fix[i+k] = vec[vec.length() - k - 1];
+              res.push_back(fix);
+            }
           }
 #ifdef DEBUG
           qDebug() << "fixing" << (edgeLength-1) << "---" << nextNode->word;
@@ -202,6 +250,8 @@ NodeVector& TextCorrector::fixSentence(NodeVector &vector, const QStringList& se
         else // whole sentence is wrong
         {
 
+          res.push_back(vector);
+          return res;
           // TODO handling whole sentence error
         }
       }
@@ -219,15 +269,19 @@ NodeVector& TextCorrector::fixSentence(NodeVector &vector, const QStringList& se
           for(int k = i ; k < i + edgeLength; k++)
             wordsToFix.push_back(sentence.at(k));
 
-          NodeVector alternativeNodes = _graphSearcher.findPathsBetweenTwoNodes(perviousNode, nextNode, edgeLength, wordsToFix, sentenceIdx);
+          QVector<NodeVector> alternativeNodes = _graphSearcher.findPathsBetweenTwoNodes(perviousNode, nextNode, edgeLength, wordsToFix, sentenceIdx);
 
           if (alternativeNodes.count() > 0)
           {
-            alternativeNodes.pop_back();
-            alternativeNodes.pop_front();
-
-            for (int k = 0 ; k < alternativeNodes.size() ; k++)
-              vector[i + k ] = alternativeNodes[k];
+            Q_FOREACH(NodeVector vec, alternativeNodes)
+            {
+              vec.pop_front();
+              vec.pop_back();
+              NodeVector fix = vector;
+              for (int k = 0 ; k < vec.length(); k++)
+                fix[i+k] = vec[k];
+              res.push_back(fix);
+            }
           }
         }
         else // fixing last words
@@ -235,20 +289,25 @@ NodeVector& TextCorrector::fixSentence(NodeVector &vector, const QStringList& se
           StringVector wordsToFix;
           for(int k = i ; k < i + edgeLength; k++)
             wordsToFix.push_back(sentence.at(k));
-          NodeVector alternativeNodes = _graphSearcher.findPathsAfterNode(perviousNode, edgeLength, wordsToFix);
+          QVector<NodeVector> alternativeNodes = _graphSearcher.findPathsAfterNode(perviousNode, edgeLength, wordsToFix);
 
           if (alternativeNodes.count() > 0)
           {
-            alternativeNodes.pop_front();
-            for (int k = 0 ; k < alternativeNodes.length(); k++)
-              vector[i+k] = alternativeNodes[k];
+            Q_FOREACH(NodeVector vec, alternativeNodes)
+            {
+              vec.pop_front();
+              NodeVector fix = vector;
+              for (int k = 0 ; k < vec.length(); k++)
+                fix[i+k] = vec[k];
+              res.push_back(fix);
+            }
           }
         }
 
       }
     }
   }
-  return vector;
+  return res;
 }
 
 QString TextCorrector::findSentenceEndingMark(const QString &line)
@@ -261,7 +320,7 @@ QString TextCorrector::findSentenceEndingMark(const QString &line)
   return QString();
 }
 
-int TextCorrector::findSentenceIdx(NodeVector &vector)
+QVector<int> TextCorrector::findSentenceIdx(const NodeVector &vector)
 {
   QVector<int> indexes;
   Q_FOREACH(Node* node, vector)
@@ -290,6 +349,19 @@ int TextCorrector::findSentenceIdx(NodeVector &vector)
     }
   }
 
-  qDebug() << indexes;
-  return indexes.at(0);
+  return indexes;
+}
+
+QString TextCorrector::parseFixedResultSentence(const NodeVector &vector, const QStringList &sentence)
+{
+  QString res;
+  for (int i = 0 ; i < vector.length(); i++)
+  {
+    Node *n = vector.at(i);
+    if (n)
+      res += n->word + " ";
+    else
+      res += "<u><font color=\"#B2B200\">" +sentence.at(i) +"</font></u> ";
+  }
+  return res;
 }

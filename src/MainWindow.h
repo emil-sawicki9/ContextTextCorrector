@@ -2,6 +2,7 @@
 #define MAINWINDOW_H
 
 #include <QMainWindow>
+#include <QProgressDialog>
 
 #include "TextCorrector.h"
 
@@ -14,7 +15,11 @@ class MainWindow : public QMainWindow
   Q_OBJECT
 
 public:
-  MainWindow(QWidget *parent = 0);
+  static MainWindow* instance();
+  void init();
+
+public slots:
+  void updateResult(const QString &result);
 
 private slots:
   void onEditorTextChanged();
@@ -24,9 +29,13 @@ private slots:
   void onChangeLanguageAction();
   void onCurrentLangChanged();
 
+  void loadLanguageOnStart();
+
 private:
+  MainWindow(QWidget *parent = 0);
+  static MainWindow* _instance;
   QTextEdit *_textEditor, *_resultEditor;
-  TextCorrector _corrector;
+  TextCorrector *_corrector;
   QLabel *_currLangLabel;
 };
 
