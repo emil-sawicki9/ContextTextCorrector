@@ -46,7 +46,10 @@ void TextCorrector::hintSentenceWithGraph(const QString &sentence)
 
   Node *perviousNode = _graphParser.getGraph()[words.at(words.count() - 2)];
   if (!perviousNode)
+  {
     emit finishedWork(QStringLiteral("Not found any hint."));
+    return;
+  }
 
   QProgressDialog *progress = new QProgressDialog(QStringLiteral("Searching for hint.."), QString(), 0, perviousNode->edgesOut.count(), MainWindow::instance());
   progress->setCancelButton(0);
@@ -179,10 +182,6 @@ void TextCorrector::fixSentence(const NodeVector &vector, const QStringList &wor
     {
       if (i == corrected.length())
         corrected.append(first.at(i));
-      if (first.at(i) != corrected.at(i))
-      {
-        corrected[i] = "<font color=\"red\">"+ corrected[i] + "</font>";
-      }
     }
 
     res = corrected.join(" ").replace(" .", ".").replace(" ,", ",").replace("  ", " ").trimmed();
@@ -359,7 +358,12 @@ QString TextCorrector::parseFixedResultSentence(const NodeVector &vector, const 
   {
     Node *n = vector.at(i);
     if (n)
-      res += n->word + " ";
+    {
+        if (n->word != sentence.at(i))
+            res += "<font color=\"red\">"+ n->word + "</font> ";
+        else
+            res += n->word + " ";
+    }
     else
       res += "<u><font color=\"#B2B200\">" +sentence.at(i) +"</font></u> ";
   }
